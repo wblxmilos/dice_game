@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Race to 100</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1d1f23;
+    --muted: #6b7280;
+    --border: #d6d9de;
+    --tile: #f4f5f7;
+    --felt: #2f6b4f;
+    --rim: #1f4a37;
+    --accent: #2f6fed;
+    --accent-hover: #2459c4;
+    --warn: #c62828;
+    --win: #1f8a4c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171b;
+      --card: #1e2126;
+      --text: #eceef1;
+      --muted: #9aa1ab;
+      --border: #3a3f48;
+      --tile: #262a30;
+      --felt: #25573f;
+      --rim: #173a2b;
+      --accent: #5b8cff;
+      --accent-hover: #7aa2ff;
+      --warn: #ff6b6b;
+      --win: #4cc27e;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 520px;
+    background: var(--card);
+    border-radius: 16px;
+    padding: 28px 24px 32px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .rules {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    background: var(--tile);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 10px 6px;
+  }
+  .stat.locked { border-color: var(--accent); }
+  .stat .label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+  }
+  .stat .value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .value small {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+
+  .stage {
+    width: 100%;
+    height: 300px;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .stage.can-grab canvas { cursor: grab; }
+  .stage.grabbing canvas { cursor: grabbing; }
+
+  .breakdown {
+    font-size: 1.05rem;
+    font-weight: 600;
+    min-height: 1.4em;
+    margin-bottom: 4px;
+  }
+
+  .message {
+    color: var(--muted);
+    font-size: 0.95rem;
+    min-height: 1.4em;
+    margin-bottom: 16px;
+  }
+  .message.warn { color: var(--warn); }
+  .message.win { color: var(--win); font-weight: 600; }
+  .message.lose { color: var(--warn); font-weight: 600; }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  button {
+    flex: 1;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  button.secondary { color: var(--accent); background: transparent; }
+  button.secondary:hover:not(:disabled) { color: #fff; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  .hint {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .history {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    min-height: 28px;
+  }
+  .history span {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .history span.warn { color: var(--warn); border-color: var(--warn); }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Race to 100</h1>
+    <p class="rules">Reach 100 points in 20 rolls. Doubles reset your score to 0.
+      Once per game you can secure your score, but you lose a die.</p>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Score</div>
+        <div class="value" id="score" aria-live="polite">0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Rolls left</div>
+        <div class="value" id="rolls">20</div>
+      </div>
+      <div class="stat" id="secured-tile">
+        <div class="label">Secured</div>
+        <div class="value" id="secured">—</div>
+      </div>
+    </div>
+
+    <div class="stage" id="stage" aria-hidden="true"></div>
+
+    <div class="breakdown" id="breakdown" aria-live="polite">Press roll to start</div>
+    <div class="message" id="message" aria-live="polite"></div>
+
+    <div class="actions">
+      <button id="roll">Roll</button>
+      <button id="secure" class="secondary">Secure</button>
+      <button id="newgame" hidden>New game</button>
+    </div>
+    <div class="hint">Space to roll · S to secure · drag a die to move it, flick it to throw</div>
+
+    <div class="history" id="history"></div>
+  </main>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+
+<script type="module">
+  import * as THREE from "three";
+  import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+  import * as CANNON from "cannon-es";
+
+  // Table play area (half sizes) – dice are 1 unit cubes
+  const HALF_W = 4;
+  const HALF_D = 2.6;
+
+  // Which of the 9 grid cells (0–8, row by row) show a pip for each face
+  const PIPS = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8]
+  };
+
+  // BoxGeometry face order is +x, -x, +y, -y, +z, -z; opposite faces sum to 7
+  const FACE_VALUES = [1, 6, 2, 5, 3, 4];
+  const FACE_NORMALS = [
+    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+  ];
+
+  const stage = document.getElementById("stage");
+  const rollBtn = document.getElementById("roll");
+  const secureBtn = document.getElementById("secure");
+  const newGameBtn = document.getElementById("newgame");
+  const scoreEl = document.getElementById("score");
+  const rollsEl = document.getElementById("rolls");
+  const securedEl = document.getElementById("secured");
+  const securedTile = document.getElementById("secured-tile");
+  const breakdownEl = document.getElementById("breakdown");
+  const messageEl = document.getElementById("message");
+  const historyEl = document.getElementById("history");
+
+  // ---------- Rendering ----------
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  stage.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 2);
+  sun.position.set(3, 10, 4);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6 });
+  sun.shadow.radius = 4;
+  scene.add(sun);
+
+  const feltMaterial = new THREE.MeshStandardMaterial({ roughness: 0.95 });
+  const rimMaterial = new THREE.MeshStandardMaterial({ roughness: 0.7 });
+
+  const felt = new THREE.Mesh(new THREE.PlaneGeometry(HALF_W * 2, HALF_D * 2), feltMaterial);
+  felt.rotation.x = -Math.PI / 2;
+  felt.receiveShadow = true;
+  scene.add(felt);
+
+  // Low visible rim around the tray
+  const RIM = 0.3;
+  [
+    [HALF_W * 2 + RIM * 2, RIM, 0, -HALF_D - RIM / 2],
+    [HALF_W * 2 + RIM * 2, RIM, 0, HALF_D + RIM / 2],
+    [RIM, HALF_D * 2, -HALF_W - RIM / 2, 0],
+    [RIM, HALF_D * 2, HALF_W + RIM / 2, 0]
+  ].forEach(([w, d, x, z]) => {
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(w, 0.4, d), rimMaterial);
+    rim.position.set(x, 0.2, z);
+    rim.castShadow = rim.receiveShadow = true;
+    scene.add(rim);
+  });
+
+  function applyTheme() {
+    const css = getComputedStyle(document.documentElement);
+    scene.background = new THREE.Color(css.getPropertyValue("--card").trim());
+    feltMaterial.color.set(css.getPropertyValue("--felt").trim());
+    rimMaterial.color.set(css.getPropertyValue("--rim").trim());
+  }
+  applyTheme();
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+
+  function faceTexture(value) {
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const g = canvas.getContext("2d");
+    g.fillStyle = "#fbfbf8";
+    g.fillRect(0, 0, size, size);
+    g.fillStyle = value === 1 ? "#c62828" : "#1d1f23";
+    const cells = [0.25, 0.5, 0.75];
+    for (const i of PIPS[value]) {
+      g.beginPath();
+      g.arc(cells[i % 3] * size, cells[Math.floor(i / 3)] * size, size * 0.085, 0, Math.PI * 2);
+      g.fill();
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return texture;
+  }
+
+  const dieGeometry = new RoundedBoxGeometry(1, 1, 1, 4, 0.1);
+  const dieMaterials = FACE_VALUES.map(v =>
+    new THREE.MeshStandardMaterial({ map: faceTexture(v), roughness: 0.35 })
+  );
+
+  // ---------- Physics ----------
+
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -30, 0) });
+  const tableMat = new CANNON.Material("table");
+  const wallMat = new CANNON.Material("wall");
+  const dieMat = new CANNON.Material("die");
+  world.addContactMaterial(new CANNON.ContactMaterial(tableMat, dieMat, { friction: 0.3, restitution: 0.4 }));
+  world.addContactMaterial(new CANNON.ContactMaterial(wallMat, dieMat, { friction: 0, restitution: 0.6 }));
+  world.addContactMaterial(new CANNON.ContactMaterial(dieMat, dieMat, { friction: 0.2, restitution: 0.5 }));
+
+  const floor = new CANNON.Body({ mass: 0, material: tableMat, shape: new CANNON.Plane() });
+  floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  world.addBody(floor);
+
+  // Tall invisible walls keep the dice inside the tray
+  [
+    [HALF_W + 1, 10, 0.5, 0, -HALF_D - 0.5],
+    [HALF_W + 1, 10, 0.5, 0, HALF_D + 0.5],
+    [0.5, 10, HALF_D + 1, -HALF_W - 0.5, 0],
+    [0.5, 10, HALF_D + 1, HALF_W + 0.5, 0]
+  ].forEach(([hx, hy, hz, x, z]) => {
+    const wall = new CANNON.Body({ mass: 0, material: wallMat, shape: new CANNON.Box(new CANNON.Vec3(hx, hy, hz)) });
+    wall.position.set(x, hy, z);
+    world.addBody(wall);
+  });
+
+  const dice = [0, 1].map(() => {
+    const mesh = new THREE.Mesh(dieGeometry, dieMaterials);
+    mesh.castShadow = true;
+
+    const body = new CANNON.Body({
+      mass: 1,
+      material: dieMat,
+      shape: new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)),
+      linearDamping: 0.1,
+      angularDamping: 0.1
+    });
+    return { mesh, body };
+  });
+  let activeDice = [];   // dice currently on the table (2, or 1 after securing)
+
+  // Put every die back on the table in its starting pose
+  function resetDice() {
+    dice.forEach(({ mesh, body }, i) => {
+      if (!world.bodies.includes(body)) world.addBody(body);
+      if (!mesh.parent) scene.add(mesh);
+      body.position.set(i === 0 ? -0.9 : 0.9, 0.5, 0);
+      body.quaternion.set(0, 0, 0, 1);
+      body.velocity.set(0, 0, 0);
+      body.angularVelocity.set(0, 0, 0);
+    });
+    activeDice = [...dice];
+  }
+
+  // ---------- Game ----------
+
+  const GOAL = 100;
+  const ROLLS_PER_GAME = 20;
+  const game = { score: 0, rollsLeft: ROLLS_PER_GAME, secured: null, over: false };
+  const history = [];
+
+  function setMessage(text, tone = "") {
+    messageEl.textContent = text;
+    messageEl.className = "message" + (tone ? " " + tone : "");
+  }
+
+  function updateUI() {
+    scoreEl.textContent = game.score;
+    rollsEl.innerHTML = `${game.rollsLeft}<small> / ${ROLLS_PER_GAME}</small>`;
+    securedEl.textContent = game.secured === null ? "—" : game.secured;
+    securedTile.classList.toggle("locked", game.secured !== null);
+
+    const free = !settling && !held && !game.over;
+    rollBtn.disabled = !free;
+    secureBtn.disabled = !free || game.secured !== null || game.score <= 0;
+    rollBtn.hidden = secureBtn.hidden = game.over;
+    newGameBtn.hidden = !game.over;
+
+    historyEl.innerHTML = history
+      .map(h => `<span class="${h.warn ? "warn" : ""}">${h.text}</span>`)
+      .join("");
+  }
+
+  function newGame() {
+    if (settling || held) return;
+    Object.assign(game, { score: 0, rollsLeft: ROLLS_PER_GAME, secured: null, over: false });
+    history.length = 0;
+    isRoll = false;
+    resetDice();
+    breakdownEl.textContent = "Press roll to start";
+    setMessage("");
+    updateUI();
+  }
+
+  function secure() {
+    if (settling || held || game.over || game.secured !== null || game.score <= 0) return;
+    game.secured = game.score;
+
+    // Lose one die for the rest of the game
+    const lost = dice[1];
+    world.removeBody(lost.body);
+    scene.remove(lost.mesh);
+    activeDice = [dice[0]];
+
+    setMessage(`${game.score} points secured. You continue with one die.`);
+    updateUI();
+  }
+
+  // Score a settled roll
+  function applyRoll(values) {
+    game.rollsLeft--;
+    const sum = values.reduce((a, b) => a + b, 0);
+    const doubles = values.length === 2 && values[0] === values[1];
+
+    if (doubles) {
+      game.score = 0;
+      breakdownEl.textContent = `${values[0]} + ${values[1]} · Doubles!`;
+      history.push({ text: "0", warn: true });
+    } else {
+      game.score += sum;
+      breakdownEl.textContent = `${values.join(" + ")} = +${sum}`;
+      history.push({ text: `+${sum}` });
+    }
+
+    if (game.score >= GOAL) {
+      game.over = true;
+      const spare = game.rollsLeft;
+      setMessage(`You win! ${game.score} points with ${spare} roll${spare === 1 ? "" : "s"} to spare.`, "win");
+    } else if (game.rollsLeft === 0) {
+      game.over = true;
+      setMessage(`Out of rolls. You were ${GOAL - game.score} points short.`, "lose");
+    } else if (doubles) {
+      setMessage("Your score was reset to 0.", "warn");
+    } else {
+      setMessage("");
+    }
+    updateUI();
+  }
+
+  // ---------- Rolling ----------
+
+  const rand = (min, max) => min + Math.random() * (max - min);
+  let settling = false;   // waiting for the dice to come to rest
+  let isRoll = false;     // whether the pending result counts as a roll
+  let stillFrames = 0;
+
+  function startSettling(countsAsRoll) {
+    settling = true;
+    isRoll = isRoll || countsAsRoll;
+    stillFrames = 0;
+    if (isRoll) {
+      breakdownEl.textContent = "Rolling…";
+      setMessage("");
+    }
+    updateUI();
+  }
+
+  function roll() {
+    if (settling || held || game.over) return;
+    startSettling(true);
+
+    activeDice.forEach(({ body }) => {
+      const p = body.position;
+      body.velocity.set(-p.x * 0.8 + rand(-2, 2), rand(12, 15), -p.z * 0.8 + rand(-2, 2));
+      body.angularVelocity.set(rand(-25, 25), rand(-25, 25), rand(-25, 25));
+      body.wakeUp();
+    });
+  }
+
+  // ---------- Dragging & throwing ----------
+
+  const HOLD_HEIGHT = 1.3;     // die centre height while held
+  const THROW_SPEED = 5;       // release speed (units/s) above which a release becomes a throw
+  const SAMPLE_WINDOW = 100;   // ms of pointer movement used to measure release speed
+
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const holdPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -HOLD_HEIGHT);
+  const target = new THREE.Vector3();
+  let held = null;             // { die, quaternion, samples }
+
+  function setPointer(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.set(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(pointer, camera);
+  }
+
+  function dieUnderPointer() {
+    const hit = raycaster.intersectObjects(activeDice.map(d => d.mesh))[0];
+    return hit ? activeDice.find(d => d.mesh === hit.object) : null;
+  }
+
+  function updateTarget() {
+    if (!raycaster.ray.intersectPlane(holdPlane, target)) return;
+    target.x = THREE.MathUtils.clamp(target.x, -HALF_W + 0.6, HALF_W - 0.6);
+    target.z = THREE.MathUtils.clamp(target.z, -HALF_D + 0.6, HALF_D - 0.6);
+    held.samples.push({ t: performance.now(), x: target.x, z: target.z });
+  }
+
+  renderer.domElement.addEventListener("pointerdown", e => {
+    if (settling || game.over) return;
+    setPointer(e);
+    const die = dieUnderPointer();
+    if (!die) return;
+
+    const q = die.body.quaternion;
+    held = { die, quaternion: new CANNON.Quaternion(q.x, q.y, q.z, q.w), samples: [] };
+    updateTarget();
+    renderer.domElement.setPointerCapture(e.pointerId);
+    stage.classList.add("grabbing");
+    updateUI();
+  });
+
+  renderer.domElement.addEventListener("pointermove", e => {
+    setPointer(e);
+    if (held) {
+      updateTarget();
+    } else {
+      stage.classList.toggle("can-grab", !settling && !game.over && !!dieUnderPointer());
+    }
+  });
+
+  function release() {
+    if (!held) return;
+    const { body } = held.die;
+    const now = performance.now();
+    const recent = held.samples.filter(s => now - s.t <= SAMPLE_WINDOW);
+    held = null;
+    stage.classList.remove("grabbing");
+
+    let vx = 0, vz = 0;
+    if (recent.length >= 2) {
+      const a = recent[0], b = recent[recent.length - 1];
+      const dt = Math.max((b.t - a.t) / 1000, 0.016);
+      vx = (b.x - a.x) / dt;
+      vz = (b.z - a.z) / dt;
+    }
+    const speed = Math.hypot(vx, vz);
+
+    if (speed < THROW_SPEED) {
+      // Gentle release: drop straight down, keeping the same face up (not a roll)
+      body.velocity.set(0, 0, 0);
+      body.angularVelocity.set(0, 0, 0);
+      startSettling(false);
+      return;
+    }
+
+    // Throw: momentum from the pointer, plus a forward tumble and random spin that grow with speed
+    const s = Math.min(speed, 20);
+    const dx = vx / speed, dz = vz / speed;
+    body.velocity.set(dx * s * 1.2, 3 + s * 0.4, dz * s * 1.2);
+    body.angularVelocity.set(
+      dz * s * 1.2 + rand(-1, 1) * s * 0.8,
+      rand(-1, 1) * s * 0.8,
+      -dx * s * 1.2 + rand(-1, 1) * s * 0.8
+    );
+    startSettling(true);
+  }
+
+  renderer.domElement.addEventListener("pointerup", release);
+  renderer.domElement.addEventListener("pointercancel", release);
+
+  // While held, steer the die toward the pointer and lock its orientation
+  world.addEventListener("preStep", () => {
+    if (!held) return;
+    const { body } = held.die;
+    body.velocity.set(
+      (target.x - body.position.x) * 15,
+      (HOLD_HEIGHT - body.position.y) * 15,
+      (target.z - body.position.z) * 15
+    );
+    body.angularVelocity.set(0, 0, 0);
+    body.quaternion.copy(held.quaternion);
+  });
+
+  // ---------- Settling ----------
+
+  // Returns the face value pointing up and how flat the die is lying (1 = perfectly flat)
+  function topFace(body) {
+    const q = new THREE.Quaternion(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+    let best = -Infinity;
+    let value = 1;
+    FACE_NORMALS.forEach((normal, i) => {
+      const up = normal.clone().applyQuaternion(q).y;
+      if (up > best) { best = up; value = FACE_VALUES[i]; }
+    });
+    return { value, flatness: best };
+  }
+
+  function isStill(body) {
+    return body.velocity.lengthSquared() < 0.01 && body.angularVelocity.lengthSquared() < 0.01;
+  }
+
+  function checkSettled() {
+    stillFrames = activeDice.every(d => isStill(d.body)) ? stillFrames + 1 : 0;
+    if (stillFrames < 15) return;
+
+    const faces = activeDice.map(d => topFace(d.body));
+
+    // A die leaning on a wall or the other die gets a small nudge to fall flat
+    const cocked = activeDice.filter((d, i) => faces[i].flatness < 0.95);
+    if (cocked.length) {
+      cocked.forEach(({ body }) => {
+        body.velocity.set(rand(-1, 1), 4, rand(-1, 1));
+        body.angularVelocity.set(rand(-5, 5), rand(-5, 5), rand(-5, 5));
+      });
+      stillFrames = 0;
+      return;
+    }
+
+    settling = false;
+    const counted = isRoll;
+    isRoll = false;
+
+    if (counted) applyRoll(faces.map(f => f.value));
+    else updateUI();
+  }
+
+  // ---------- Controls ----------
+
+  rollBtn.addEventListener("click", roll);
+  secureBtn.addEventListener("click", secure);
+  newGameBtn.addEventListener("click", newGame);
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "BUTTON" && (e.code === "Space" || e.code === "Enter")) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (game.over) newGame(); else roll();
+    } else if (e.code === "KeyS") {
+      secure();
+    }
+  });
+
+  // ---------- Loop & resize ----------
+
+  function resize() {
+    const { clientWidth: w, clientHeight: h } = stage;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    // Pull the camera back on narrow screens so the whole tray stays in view
+    camera.position.set(0, 10, 6.5).multiplyScalar(Math.max(1, 1.5 / camera.aspect));
+    camera.lookAt(0, 0, 0.3);
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  let last = performance.now();
+  function animate(now) {
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    world.step(1 / 120, dt, 10);
+
+    dice.forEach(({ mesh, body }) => {
+      mesh.position.copy(body.position);
+      mesh.quaternion.copy(body.quaternion);
+    });
+
+    if (settling && !held) checkSettled();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+
+  newGame();
+  requestAnimationFrame(animate);
+</script>
+</body>
+</html>
